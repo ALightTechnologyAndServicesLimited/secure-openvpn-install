@@ -1,24 +1,69 @@
-**New: [wireguard-install](https://github.com/Nyr/wireguard-install) is also available.**
+**Forked from [openvpn-install](https://github.com/Nyr/openvpn-install).**
+Many thanks to the owner of the above mentioned Github repository.
 
 ## openvpn-install
-OpenVPN [road warrior](http://en.wikipedia.org/wiki/Road_warrior_%28computing%29) installer for Ubuntu, Debian, AlmaLinux, Rocky Linux, CentOS and Fedora.
+OpenVPN installer for Ubuntu, Debian, AlmaLinux, Rocky Linux, CentOS and Fedora.
 
-This script will let you set up your own VPN server in no more than a minute, even if you haven't used OpenVPN before. It has been designed to be as unobtrusive and universal as possible.
+## Important differences and suggestions:
 
-### Installation
-Run the script and follow the assistant:
+### HaveGed ###
+1) Install and use HaveGed on Ubuntu machines for entropy.
 
-`wget https://git.io/vpn -O openvpn-install.sh && bash openvpn-install.sh`
+```sudo ./haveged-install.sh```
 
-Once it ends, you can run it again to add more users, remove some of them or even completely uninstall OpenVPN.
+### dhpem ###
+2) Generate new dhpem key. 3 scripts are available:
 
-### I want to run my own VPN but don't have a server for that
-You can get a VPS from just 2 [EUR](https://alphavps.com/clients/store/openvpn?aff=474&currency=1) or [USD](https://alphavps.com/clients/store/openvpn?aff=474&currency=6) per month at [AlphaVPS](https://alphavps.com/clients/store/openvpn?aff=474&currency=1).
+a) dh2048.sh
 
-### Donations
-If you want to show your appreciation, you can donate via [PayPal](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=VBAYDL34Z7J6L) or [cryptocurrency](https://pastebin.com/raw/M2JJpQpC). Thanks!
+b) dh4096.sh
 
-### Sponsors
-This project is proudly sponsored by our friends at [FrogeHost](https://froge.host/?utm_source=nyr).
+c) dh8192.sh
 
-For a commercial VPN with strong anti-censorship capabilities (最强翻墙VPN) from $1/month, check out [Clever VPN](https://www.clever-vpn.net/?wg-referral=01LOULuQoi).
+```sudo ./dh8192.sh```
+
+```sudo ./dh4096.sh```
+
+```sudo ./dh2048.sh```
+
+Generates /var/dh.pem
+
+
+### OpenVPN ###
+
+3) Install OpenVPN
+
+This is completely customized for my own purpose, you need to customize for your own purpose
+
+lines 248 - 249: strength of dhpem, number of days for certificates
+
+line 268: location of dhpem
+
+lines 271 - 301: server options, protocol hardcoded to tcp, port hardcoded to 1194
+
+lines 312 - 331: server options, DNS servers
+
+lines 411 - 435: client options
+
+
+### Alert ###
+
+All weak ciphers are disabled. Default configuration of OpenVPN 3600 seconds key re-negotiation, 7200 seconds validity.
+
+Some state-sponsored hacking spies have ability crack keys in under 240 seconds.
+Script's reneg-sec of 10 seconds means, re-negotiate key every 10 seconds, key valid for tran-window i.e maximum 15 seconds.
+
+If targeted by state-sponsored-hacker-spies tran-window of above 45 seconds is a security risk.
+
+The state-sponsored-hacker-spies have invisible spying drones capable of cameras, speakers and even mind-reading.
+
+Remember, civilians thrive when identities are proper.
+
+spies/hackers/mafia create chaos, identity distortion for cover-ups
+
+## Disclaimer ##
+NOT associated to state-sponsored-hacker-spies
+
+NOT associated to bh*ttru, e*rra, y*rra, z*nnabath*ni, th*ta surnamed people
+
+NOT associated to est*r, utt*m

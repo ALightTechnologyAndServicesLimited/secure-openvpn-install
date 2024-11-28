@@ -245,9 +245,9 @@ LimitNPROC=infinity" > /etc/systemd/system/openvpn-server@server.service.d/disab
 	# Create the PKI, set up the CA and the server and client certificates
 	./easyrsa --batch init-pki
 	./easyrsa --batch build-ca nopass
-	./easyrsa --batch --days=3650 build-server-full server nopass
-	./easyrsa --batch --days=3650 build-client-full "$client" nopass
-	./easyrsa --batch --days=3650 gen-crl
+	./easyrsa --keysize=8192 --digest=sha512 --batch --days=31 build-server-full server nopass
+	./easyrsa --batch --days=31 build-client-full "$client" nopass
+	./easyrsa --batch --days=31 gen-crl
 	# Move the stuff we need
 	cp pki/ca.crt pki/private/ca.key pki/issued/server.crt pki/private/server.key pki/crl.pem /etc/openvpn/server
 	# CRL is read with each client connection, while OpenVPN is dropped to nobody
@@ -257,26 +257,48 @@ LimitNPROC=infinity" > /etc/systemd/system/openvpn-server@server.service.d/disab
 	# Generate key for tls-crypt
 	openvpn --genkey secret /etc/openvpn/server/tc.key
 	# Create the DH parameters file using the predefined ffdhe2048 group
-	echo '-----BEGIN DH PARAMETERS-----
-MIIBCAKCAQEA//////////+t+FRYortKmq/cViAnPTzx2LnFg84tNpWp4TZBFGQz
-+8yTnc4kmz75fS/jY2MMddj2gbICrsRhetPfHtXV/WVhJDP1H18GbtCFY2VVPe0a
-87VXE15/V8k1mE8McODmi3fipona8+/och3xWKE2rec1MKzKT0g6eXq8CrGCsyT7
-YdEIqUuyyOP7uWrat2DX9GgdT0Kj3jlN9K5W7edjcrsZCwenyO4KbXCeAvzhzffi
-7MA0BM0oNC9hkXL+nOmFg/+OTxIy7vKBg8P+OxtMb61zO7X8vC7CIAXFjvGDfRaD
-ssbzSibBsu/6iGtCOGEoXJf//////////wIBAg==
------END DH PARAMETERS-----' > /etc/openvpn/server/dh.pem
+# 	echo '-----BEGIN DH PARAMETERS-----
+# MIIBCAKCAQEA//////////+t+FRYortKmq/cViAnPTzx2LnFg84tNpWp4TZBFGQz
+# +8yTnc4kmz75fS/jY2MMddj2gbICrsRhetPfHtXV/WVhJDP1H18GbtCFY2VVPe0a
+# 87VXE15/V8k1mE8McODmi3fipona8+/och3xWKE2rec1MKzKT0g6eXq8CrGCsyT7
+# YdEIqUuyyOP7uWrat2DX9GgdT0Kj3jlN9K5W7edjcrsZCwenyO4KbXCeAvzhzffi
+# 7MA0BM0oNC9hkXL+nOmFg/+OTxIy7vKBg8P+OxtMb61zO7X8vC7CIAXFjvGDfRaD
+# ssbzSibBsu/6iGtCOGEoXJf//////////wIBAg==
+# -----END DH PARAMETERS-----' > /etc/openvpn/server/dh.pem
+	mv /var/dh.pem /etc/openvpn/server/dh.pem
 	# Generate server.conf
 	echo "local $ip
-port $port
-proto $protocol
+port 1194
+proto  tcp-server
 dev tun
 ca ca.crt
 cert server.crt
 key server.key
 dh dh.pem
+ecdh-curve secp521r1
+tls-server
+tls-cipher TLS_AES_256_GCM_SHA384:TLS-ECDHE-ECDSA-WITH-AES-256-GCM-SHA384:TLS-ECDHE-RSA-WITH-AES-256-GCM-SHA384:TLS-DHE-RSA-WITH-AES-256-GCM-SHA384
 auth SHA512
+data-ciphers CHACHA20-POLY1305
 tls-crypt tc.key
+tls-cert-profile preferred
+tls-version-min "1.2"
 topology subnet
+single-session
+max-clients 1
+log /var/log/openvpn/openvpn.log
+mlock
+status /var/log/openvpn/status.txt
+verify-client-cert require
+hand-window 20
+tcp-queue-limit 65536
+sndbuf 51200000
+rcvbuf 51200000
+fast-io
+txqueuelen 65536
+tun-mtu 16000
+fragment 0
+mssfix 0
 server 10.8.0.0 255.255.255.0" > /etc/openvpn/server/server.conf
 	# IPv6
 	if [[ -z "$ip6" ]]; then
@@ -287,48 +309,26 @@ server 10.8.0.0 255.255.255.0" > /etc/openvpn/server/server.conf
 	fi
 	echo 'ifconfig-pool-persist ipp.txt' >> /etc/openvpn/server/server.conf
 	# DNS
-	case "$dns" in
-		1|"")
-			# Locate the proper resolv.conf
-			# Needed for systems running systemd-resolved
-			if grep '^nameserver' "/etc/resolv.conf" | grep -qv '127.0.0.53' ; then
-				resolv_conf="/etc/resolv.conf"
-			else
-				resolv_conf="/run/systemd/resolve/resolv.conf"
-			fi
-			# Obtain the resolvers from resolv.conf and use them for OpenVPN
-			grep -v '^#\|^;' "$resolv_conf" | grep '^nameserver' | grep -v '127.0.0.53' | grep -oE '[0-9]{1,3}(\.[0-9]{1,3}){3}' | while read line; do
-				echo "push \"dhcp-option DNS $line\"" >> /etc/openvpn/server/server.conf
-			done
-		;;
-		2)
-			echo 'push "dhcp-option DNS 8.8.8.8"' >> /etc/openvpn/server/server.conf
-			echo 'push "dhcp-option DNS 8.8.4.4"' >> /etc/openvpn/server/server.conf
-		;;
-		3)
-			echo 'push "dhcp-option DNS 1.1.1.1"' >> /etc/openvpn/server/server.conf
-			echo 'push "dhcp-option DNS 1.0.0.1"' >> /etc/openvpn/server/server.conf
-		;;
-		4)
-			echo 'push "dhcp-option DNS 208.67.222.222"' >> /etc/openvpn/server/server.conf
-			echo 'push "dhcp-option DNS 208.67.220.220"' >> /etc/openvpn/server/server.conf
-		;;
-		5)
-			echo 'push "dhcp-option DNS 9.9.9.9"' >> /etc/openvpn/server/server.conf
-			echo 'push "dhcp-option DNS 149.112.112.112"' >> /etc/openvpn/server/server.conf
-		;;
-		6)
-			echo 'push "dhcp-option DNS 94.140.14.14"' >> /etc/openvpn/server/server.conf
-			echo 'push "dhcp-option DNS 94.140.15.15"' >> /etc/openvpn/server/server.conf
-		;;
-	esac
+	echo 'push "dhcp-option DNS 8.8.8.8"' >> /etc/openvpn/server/server.conf
+	echo 'push "dhcp-option DNS 1.1.1.1"' >> /etc/openvpn/server/server.conf
+	echo 'push "dhcp-option DNS 8.8.4.4"' >> /etc/openvpn/server/server.conf
+	echo 'push "dhcp-option DNS 1.0.0.1"' >> /etc/openvpn/server/server.conf
+	echo 'push "dhcp-option DNS 208.67.222.222"' >> /etc/openvpn/server/server.conf
+	echo 'push "dhcp-option DNS 9.9.9.9"' >> /etc/openvpn/server/server.conf
+	echo 'push "dhcp-option DNS 208.67.220.220"' >> /etc/openvpn/server/server.conf
+	echo 'push "dhcp-option DNS 149.112.112.112"' >> /etc/openvpn/server/server.conf
 	echo 'push "block-outside-dns"' >> /etc/openvpn/server/server.conf
 	echo "keepalive 10 120
-user nobody
-group $group_name
 persist-key
 persist-tun
-verb 3
+verb 4
+log /var/log/openvpn/openvpn.log
+status /var/log/openvpn/status.txt
+script-security 2
+status-version 3
+reneg-sec 10
+tran-window 15
+verify-client-cert require
 crl-verify crl.pem" >> /etc/openvpn/server/server.conf
 	if [[ "$protocol" = "udp" ]]; then
 		echo "explicit-exit-notify" >> /etc/openvpn/server/server.conf
@@ -409,15 +409,29 @@ WantedBy=multi-user.target" >> /etc/systemd/system/openvpn-iptables.service
 	# client-common.txt is created so we have a template to add further users later
 	echo "client
 dev tun
-proto $protocol
-remote $ip $port
+proto tcp-client
+remote $ip 1194
 resolv-retry infinite
-nobind
 persist-key
 persist-tun
+nobind
 remote-cert-tls server
 auth SHA512
+tls-client
+tls-cipher TLS_AES_256_GCM_SHA384:TLS-ECDHE-ECDSA-WITH-AES-256-GCM-SHA384:TLS-ECDHE-RSA-WITH-AES-256-GCM-SHA384:TLS-DHE-RSA-WITH-AES-256-GCM-SHA384
+data-ciphers CHACHA20-POLY1305
+auth-nocache
+reneg-sec 10
+tran-window 15
+hand-window 20
 ignore-unknown-option block-outside-dns
+tcp-queue-limit 65536
+sndbuf 51200000
+rcvbuf 51200000
+fast-io
+txqueuelen 65536
+mssfix 0
+tun-mtu 16000
 verb 3" > /etc/openvpn/server/client-common.txt
 	# Enable and start the OpenVPN service
 	systemctl enable --now openvpn-server@server.service
